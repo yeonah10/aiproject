@@ -3,14 +3,14 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 
+# 페이지 설정
 st.set_page_config(
-    page_title="서울 관광지 TOP 10",
+    page_title="서울 관광지 TOP 10 지도",
     page_icon="🗺️",
     layout="wide"
 )
 
-# 서울의 주요 관광지 데이터
-# 위도와 경도는 지도 표시용 좌표입니다.
+# 관광지 데이터
 attractions = [
     {
         "순위": 1,
@@ -37,7 +37,7 @@ attractions = [
         "위도": 37.5512,
         "경도": 126.9882,
         "주소": "서울 용산구 남산공원길 105",
-        "설명": "남산에서 서울의 전경과 아름다운 야경을 감상할 수 있습니다."
+        "설명": "남산에서 서울의 전경과 야경을 감상할 수 있습니다."
     },
     {
         "순위": 4,
@@ -68,7 +68,7 @@ attractions = [
     },
     {
         "순위": 7,
-        "관광지": "동대문디자인플라자",
+        "관광지": "동대문디자인플라자(DDP)",
         "유형": "건축·전시",
         "위도": 37.5670,
         "경도": 127.0095,
@@ -114,11 +114,11 @@ st.write(
 )
 
 st.info(
-    "이 목록은 서울의 대표적인 관광지를 바탕으로 구성한 추천 목록이며, "
+    "이 목록은 서울의 대표 관광지를 바탕으로 구성한 추천 목록이며, "
     "공식 방문객 통계에 따른 순위는 아닙니다."
 )
 
-# 검색 및 필터
+# 사이드바 검색 기능
 st.sidebar.header("관광지 검색")
 
 category = st.sidebar.selectbox(
@@ -126,118 +126,4 @@ category = st.sidebar.selectbox(
     ["전체"] + sorted(df["유형"].unique().tolist())
 )
 
-keyword = st.sidebar.text_input(
-    "관광지 이름 검색"
-)
-
-filtered_df = df.copy()
-
-if category != "전체":
-    filtered_df = filtered_df[
-        filtered_df["유형"] == category
-    ]
-
-if keyword:
-    filtered_df = filtered_df[
-        filtered_df["관광지"].str.contains(
-            keyword,
-            case=False,
-            na=False
-        )
-    ]
-
-# 화면 구성
-left, right = st.columns([1.5, 1])
-
-with left:
-    st.subheader("📍 관광지 지도")
-
-    # 서울 중심 지도
-    m = folium.Map(
-        location=[37.5665, 126.9780],
-        zoom_start=12,
-        tiles="OpenStreetMap"
-    )
-
-    # 관광지 마커 표시
-    for _, row in filtered_df.iterrows():
-
-        popup_text = f"""
-        <b>{row['순위']}. {row['관광지']}</b><br>
-        유형: {row['유형']}<br>
-        주소: {row['주소']}<br>
-        <br>
-        {row['설명']}
-        """
-
-        folium.Marker(
-            location=[
-                row["위도"],
-                row["경도"]
-            ],
-            tooltip=row["관광지"],
-            popup=folium.Popup(
-                popup_text,
-                max_width=300
-            ),
-            icon=folium.Icon(
-                color="red",
-                icon="info-sign"
-            )
-        ).add_to(m)
-
-    # 검색 결과에 맞게 지도 확대
-    if not filtered_df.empty:
-        bounds = filtered_df[
-            ["위도", "경도"]
-        ].values.tolist()
-
-        if len(bounds) > 1:
-            m.fit_bounds(bounds, padding=(25, 25))
-        else:
-            m.location = bounds[0]
-            m.zoom_start = 15
-
-    st_folium(
-        m,
-        use_container_width=True,
-        height=550,
-        key="seoul_map"
-    )
-
-with right:
-    st.subheader("🏙️ 관광지 목록")
-
-    if filtered_df.empty:
-        st.warning("검색 결과가 없습니다.")
-    else:
-        for _, row in filtered_df.iterrows():
-
-            with st.expander(
-                f"{row['순위']}. {row['관광지']}"
-            ):
-                st.write(
-                    f"**관광 유형:** {row['유형']}"
-                )
-                st.write(
-                    f"**주소:** {row['주소']}"
-                )
-                st.write(
-                    f"**설명:** {row['설명']}"
-                )
-
-# 데이터 표
-st.subheader("📋 관광지 정보")
-
-st.dataframe(
-    filtered_df[
-        ["순위", "관광지", "유형", "주소", "위도", "경도"]
-    ],
-    use_container_width=True,
-    hide_index=True
-)
-
-st.caption(
-    "지도: OpenStreetMap | "
-    "관광지 운영시간 및 이용 정보는 방문 전 공식 안내를 확인하세요."
-)
+keyword = st.sidebar.text_input("관광지 이름
