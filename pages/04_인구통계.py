@@ -407,3 +407,65 @@ st.dataframe(
 )
 
 st.caption("자료: 제공된 인천광역시 인구 데이터")
+
+# =========================
+# 9-1. 전년도 대비 인구 증감률
+# =========================
+
+st.divider()
+st.subheader("📉 전년도 대비 인구 증감률")
+
+if year == 2020:
+    st.info("2020년은 전년도 데이터가 없어 증감률을 계산할 수 없습니다.")
+
+else:
+    previous_year = year - 1
+
+    current_population = get_population(
+        selected, year, ""
+    )
+
+    previous_population = get_population(
+        selected, previous_year, ""
+    )
+
+    difference = current_population - previous_population
+
+    if previous_population != 0:
+        change_rate = (
+            difference / previous_population
+        ) * 100
+    else:
+        change_rate = 0
+
+    rate_col1, rate_col2, rate_col3 = st.columns(3)
+
+    with rate_col1:
+        st.metric(
+            "올해 인구",
+            f"{current_population:,.0f}명"
+        )
+
+    with rate_col2:
+        st.metric(
+            "전년도 인구",
+            f"{previous_population:,.0f}명"
+        )
+
+    with rate_col3:
+        st.metric(
+            "인구 증감률",
+            f"{change_rate:+.2f}%",
+            delta=f"{difference:+,.0f}명"
+        )
+
+    if difference > 0:
+        st.success(
+            f"{previous_year}년보다 인구가 {difference:,.0f}명 증가했습니다."
+        )
+    elif difference < 0:
+        st.warning(
+            f"{previous_year}년보다 인구가 {abs(difference):,.0f}명 감소했습니다."
+        )
+    else:
+        st.info("전년도와 인구수가 같습니다.")
