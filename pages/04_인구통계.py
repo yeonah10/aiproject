@@ -1,471 +1,91 @@
 
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-from pathlib import Path
-
 # =========================
-# 1. 페이지 설정
-# =========================
-
-st.set_page_config(
-    page_title="인천 인구통계",
-    page_icon="📊",
-    layout="wide"
-)
-
-st.title("📊 인천광역시 인구통계 분석")
-st.write("지역과 연도별 인구 현황을 확인할 수 있습니다.")
-
-# =========================
-# 2. CSV 파일 불러오기
-# =========================
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-file_paths = [
-    BASE_DIR / "population_utf8.csv",
-    BASE_DIR / "population.csv"
-]
-
-CSV_PATH = next(
-    (p for p in file_paths if p.is_file()),
-    None
-)
-
-if CSV_PATH is None:
-    st.error("CSV 파일을 찾을 수 없습니다. 저장소 최상위 폴더를 확인해 주세요.")
-    st.stop()
-
-
-@st.cache_data
-def load_data(path):
-    try:
-        return pd.read_csv(path, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        return pd.read_csv(path, encoding="cp949")
-
-
-df = load_data(str(CSV_PATH))
-
-# =========================
-# 3. 지역명 정리
-# =========================
-
-if "행정구역" not in df.columns:
-    st.error("CSV 파일에 '행정구역' 열이 없습니다.")
-    st.stop()
-
-df["행정구역"] = df["행정구역"].astype(str).str.strip()
-
-
-def clean_region(name):
-    name = name.split("(")[0].strip()
-
-    if name == "인천광역시":
-        return name
-
-    return name.replace("인천광역시 ", "")
-
-
-df["지역명"] = df["행정구역"].apply(clean_region)
-
-# =========================
-# 4. 연령대 설정
-# =========================
-
-ages = [
-    "0~9세",
-    "10~19세",
-    "20~29세",
-    "30~39세",
-    "40~49세",
-    "50~59세",
-    "60~69세",
-    "70~79세",
-    "80~89세",
-    "90~99세",
-    "100세 이상"
-]
-
-
-def get_number(value):
-    return pd.to_numeric(
-        str(value).replace(",", "").strip(),
-        errors="coerce"
-    )
-
-
-def get_population(row, year, prefix, age=None):
-    if age is None:
-        column = f"{year}년_{prefix}거주자_총인구수"
-    else:
-        column = f"{year}년_{prefix}거주자_{age}"
-
-    if column not in df.columns:
-        return 0
-
-    value = get_number(row[column])
-
-    if pd.isna(value):
-        return 0
-
-    return value
-
-
-# =========================
-# 5. 지역 및 연도 선택
-# =========================
-
-st.subheader("🔎 분석 조건")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    region = st.selectbox(
-        "행정구역 선택",
-        df["지역명"].drop_duplicates().tolist()
-    )
-
-with col2:
-    year = st.selectbox(
-        "연도 선택",
-        list(range(2020, 2026)),
-        index=5
-    )
-
-selected = df[df["지역명"] == region].iloc[0]
-
-# =========================
-# 6. 연령별 남녀 인구 그래프
+# 9-1. 구별 전년도 대비 인구 증감률 그래프
 # =========================
 
 st.divider()
-st.subheader("📈 연령별 남녀 인구 통계")
-
-male_values = [
-    get_population(selected, year, "남_", age)
-    for age in ages
-]
-
-female_values = [
-    get_population(selected, year, "여_", age)
-    for age in ages
-]
-
-fig = go.Figure()
-
-# 남성 그래프
-fig.add_trace(
-    go.Scatter(
-        x=ages,
-        y=male_values,
-        mode="lines+markers",
-        name="남성",
-        line=dict(color="#87CEEB", width=3),
-        marker=dict(color="#87CEEB", size=8),
-        hovertemplate="%{x}<br>남성: %{y:,.0f}명<extra></extra>"
-    )
-)
-
-# 여성 그래프
-fig.add_trace(
-    go.Scatter(
-        x=ages,
-        y=female_values,
-        mode="lines+markers",
-        name="여성",
-        line=dict(color="#FFB6C1", width=3),
-        marker=dict(color="#FFB6C1", size=8),
-        hovertemplate="%{x}<br>여성: %{y:,.0f}명<extra></extra>"
-    )
-)
-
-max_value = max(male_values + female_values)
-y_max = max(
-    100000,
-    (int(max_value) // 100000 + 1) * 100000
-)
-
-fig.update_layout(
-    title=f"{region} {year}년 연령별 남녀 인구 비교",
-    xaxis_title="연령대",
-    yaxis_title="인구수 (명)",
-    xaxis=dict(
-        categoryorder="array",
-        categoryarray=ages
-    ),
-    yaxis=dict(
-        range=[0, y_max],
-        dtick=100000,
-        tickformat=","
-    ),
-    hovermode="x unified",
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    height=550,
-    legend=dict(
-        orientation="h",
-        y=1.12,
-        x=0.5,
-        xanchor="center"
-    )
-)
-
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
-
-# =========================
-# 7. 남녀 인구 비율 원형그래프
-# =========================
-
-st.divider()
-st.subheader("🥧 남녀 인구 비율")
-
-male_total = get_population(selected, year, "남_")
-female_total = get_population(selected, year, "여_")
-total_population = male_total + female_total
-
-pie_col1, pie_col2 = st.columns([1, 1])
-
-with pie_col1:
-    pie_fig = go.Figure(
-        data=[
-            go.Pie(
-                labels=["남성", "여성"],
-                values=[male_total, female_total],
-                marker=dict(
-                    colors=["#87CEEB", "#FFB6C1"]
-                ),
-                textinfo="label+percent",
-                hovertemplate=(
-                    "%{label}<br>"
-                    "%{value:,.0f}명<br>"
-                    "%{percent}"
-                    "<extra></extra>"
-                )
-            )
-        ]
-    )
-
-    pie_fig.update_layout(
-        title=f"{region} {year}년 남녀 인구 비율",
-        height=400
-    )
-
-    st.plotly_chart(
-        pie_fig,
-        use_container_width=True
-    )
-
-with pie_col2:
-    st.metric("남성 인구", f"{male_total:,.0f}명")
-    st.metric("여성 인구", f"{female_total:,.0f}명")
-    st.metric("전체 인구", f"{total_population:,.0f}명")
-
-# =========================
-# 8. 연령대별 행정구역 TOP 10
-# =========================
-
-st.divider()
-st.subheader("🏆 연령대별 행정구역 TOP 10")
-
-rank_col1, rank_col2 = st.columns(2)
-
-with rank_col1:
-    selected_age = st.selectbox(
-        "비교할 연령대",
-        ages,
-        index=2
-    )
-
-with rank_col2:
-    rank_gender = st.selectbox(
-        "비교할 성별",
-        ["전체", "남성", "여성"]
-    )
-
-rank_prefix = {
-    "전체": "",
-    "남성": "남_",
-    "여성": "여_"
-}[rank_gender]
-
-rank_color = {
-    "전체": "#B39DDB",
-    "남성": "#87CEEB",
-    "여성": "#FFB6C1"
-}[rank_gender]
-
-rank_column = f"{year}년_{rank_prefix}거주자_{selected_age}"
-
-if rank_column not in df.columns:
-    st.error(f"TOP 10 데이터 열을 찾을 수 없습니다: {rank_column}")
-    st.stop()
-
-rank_df = df[
-    df["지역명"] != "인천광역시"
-].copy()
-
-rank_df["인구수"] = rank_df[rank_column].apply(get_number)
-
-rank_df = (
-    rank_df.dropna(subset=["인구수"])
-    .sort_values("인구수", ascending=False)
-    .head(10)
-)
-
-rank_fig = go.Figure()
-
-rank_fig.add_trace(
-    go.Bar(
-        x=rank_df["지역명"],
-        y=rank_df["인구수"],
-        marker_color=rank_color,
-        text=rank_df["인구수"].apply(
-            lambda x: f"{x:,.0f}명"
-        ),
-        textposition="outside",
-        hovertemplate=(
-            "%{x}<br>"
-            "인구수: %{y:,.0f}명"
-            "<extra></extra>"
-        )
-    )
-)
-
-rank_fig.update_layout(
-    title=f"{year}년 {selected_age} {rank_gender} 인구 TOP 10",
-    xaxis_title="행정구역",
-    yaxis_title="인구수 (명)",
-    yaxis=dict(tickformat=","),
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    height=500
-)
-
-st.plotly_chart(
-    rank_fig,
-    use_container_width=True
-)
-
-# =========================
-# 9. 인구 분석 결과
-# =========================
-
-st.divider()
-st.subheader("📌 인구 분석 결과")
-
-result1, result2, result3 = st.columns(3)
-
-with result1:
-    st.metric(
-        "남성 인구",
-        f"{male_total:,.0f}명"
-    )
-
-with result2:
-    st.metric(
-        "여성 인구",
-        f"{female_total:,.0f}명"
-    )
-
-with result3:
-    st.metric(
-        "전체 인구",
-        f"{total_population:,.0f}명"
-    )
-
-# =========================
-# 10. 연령별 상세 데이터
-# =========================
-
-st.divider()
-st.subheader("📋 연령별 남녀 상세 데이터")
-
-detail_df = pd.DataFrame({
-    "연령대": ages,
-    "남성 인구": male_values,
-    "여성 인구": female_values,
-    "전체 인구": [
-        m + f
-        for m, f in zip(male_values, female_values)
-    ]
-})
-
-for column in ["남성 인구", "여성 인구", "전체 인구"]:
-    detail_df[column] = detail_df[column].apply(
-        lambda x: f"{x:,.0f}명"
-    )
-
-st.dataframe(
-    detail_df,
-    use_container_width=True,
-    hide_index=True
-)
-
-st.caption("자료: 제공된 인천광역시 인구 데이터")
-
-# =========================
-# 9-1. 전년도 대비 인구 증감률
-# =========================
-
-st.divider()
-st.subheader("📉 전년도 대비 인구 증감률")
+st.subheader("📊 구별 전년도 대비 인구 증감률")
 
 if year == 2020:
     st.info("2020년은 전년도 데이터가 없어 증감률을 계산할 수 없습니다.")
 
 else:
+    import plotly.express as px
+
     previous_year = year - 1
 
-    current_population = get_population(
-        selected, year, ""
-    )
+    change_data = []
 
-    previous_population = get_population(
-        selected, previous_year, ""
-    )
+    # 인천광역시 전체 제외
+    district_df = df[df["지역명"] != "인천광역시"]
 
-    difference = current_population - previous_population
+    for _, row in district_df.iterrows():
+        current_population = get_population(row, year, "")
+        previous_population = get_population(row, previous_year, "")
 
-    if previous_population != 0:
-        change_rate = (
-            difference / previous_population
-        ) * 100
+        if previous_population == 0:
+            continue
+
+        difference = current_population - previous_population
+        change_rate = (difference / previous_population) * 100
+
+        change_data.append({
+            "지역명": row["지역명"],
+            "증감률": change_rate,
+            "증감 인구": difference
+        })
+
+    change_df = pd.DataFrame(change_data)
+
+    if not change_df.empty:
+        change_df = change_df.sort_values(
+            "증감률", ascending=False
+        )
+
+        fig = px.bar(
+            change_df,
+            x="지역명",
+            y="증감률",
+            color="증감률",
+            color_continuous_scale=[
+                "#F4A6B8",
+                "#FCE4EC",
+                "#D9EAF7",
+                "#87CEEB"
+            ],
+            text=change_df["증감률"].apply(
+                lambda x: f"{x:+.2f}%"
+            ),
+            hover_data={
+                "증감 인구": ":,.0f",
+                "증감률": ":.2f"
+            }
+        )
+
+        fig.update_traces(
+            textposition="outside"
+        )
+
+        fig.update_layout(
+            xaxis_title="행정구역",
+            yaxis_title="인구 증감률 (%)",
+            coloraxis_showscale=False,
+            yaxis=dict(zeroline=True),
+            showlegend=False
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.dataframe(
+            change_df.rename(columns={
+                "증감률": "인구 증감률(%)",
+                "증감 인구": "인구 증감 수(명)"
+            }).style.format({
+                "인구 증감률(%)": "{:+.2f}%",
+                "인구 증감 수(명)": "{:+,.0f}"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
     else:
-        change_rate = 0
-
-    rate_col1, rate_col2, rate_col3 = st.columns(3)
-
-    with rate_col1:
-        st.metric(
-            "올해 인구",
-            f"{current_population:,.0f}명"
-        )
-
-    with rate_col2:
-        st.metric(
-            "전년도 인구",
-            f"{previous_population:,.0f}명"
-        )
-
-    with rate_col3:
-        st.metric(
-            "인구 증감률",
-            f"{change_rate:+.2f}%",
-            delta=f"{difference:+,.0f}명"
-        )
-
-    if difference > 0:
-        st.success(
-            f"{previous_year}년보다 인구가 {difference:,.0f}명 증가했습니다."
-        )
-    elif difference < 0:
-        st.warning(
-            f"{previous_year}년보다 인구가 {abs(difference):,.0f}명 감소했습니다."
-        )
-    else:
-        st.info("전년도와 인구수가 같습니다.")
+        st.warning("증감률을 계산할 데이터가 없습니다.")
