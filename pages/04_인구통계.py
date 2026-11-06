@@ -4,6 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from pathlib import Path
 
+# =========================
+# 1. 페이지 설정
+# =========================
+
 st.set_page_config(
     page_title="인천 인구통계",
     page_icon="📊",
@@ -13,7 +17,10 @@ st.set_page_config(
 st.title("📊 인천광역시 인구통계 분석")
 st.write("지역과 연도별 인구 현황을 확인할 수 있습니다.")
 
-# 1. CSV 파일 불러오기
+# =========================
+# 2. CSV 파일 불러오기
+# =========================
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 file_paths = [
@@ -21,7 +28,10 @@ file_paths = [
     BASE_DIR / "population.csv"
 ]
 
-CSV_PATH = next((p for p in file_paths if p.is_file()), None)
+CSV_PATH = next(
+    (p for p in file_paths if p.is_file()),
+    None
+)
 
 if CSV_PATH is None:
     st.error("CSV 파일을 찾을 수 없습니다. 저장소 최상위 폴더를 확인해 주세요.")
@@ -38,7 +48,10 @@ def load_data(path):
 
 df = load_data(str(CSV_PATH))
 
-# 2. 지역명 정리
+# =========================
+# 3. 지역명 정리
+# =========================
+
 if "행정구역" not in df.columns:
     st.error("CSV 파일에 '행정구역' 열이 없습니다.")
     st.stop()
@@ -48,19 +61,31 @@ df["행정구역"] = df["행정구역"].astype(str).str.strip()
 
 def clean_region(name):
     name = name.split("(")[0].strip()
+
     if name == "인천광역시":
         return name
+
     return name.replace("인천광역시 ", "")
 
 
 df["지역명"] = df["행정구역"].apply(clean_region)
 
-# 3. 연령대 설정
+# =========================
+# 4. 연령대 설정
+# =========================
+
 ages = [
-    "0~9세", "10~19세", "20~29세",
-    "30~39세", "40~49세", "50~59세",
-    "60~69세", "70~79세", "80~89세",
-    "90~99세", "100세 이상"
+    "0~9세",
+    "10~19세",
+    "20~29세",
+    "30~39세",
+    "40~49세",
+    "50~59세",
+    "60~69세",
+    "70~79세",
+    "80~89세",
+    "90~99세",
+    "100세 이상"
 ]
 
 
@@ -81,10 +106,17 @@ def get_population(row, year, prefix, age=None):
         return 0
 
     value = get_number(row[column])
-    return 0 if pd.isna(value) else value
+
+    if pd.isna(value):
+        return 0
+
+    return value
 
 
-# 4. 지역 및 연도 선택
+# =========================
+# 5. 지역 및 연도 선택
+# =========================
+
 st.subheader("🔎 분석 조건")
 
 col1, col2 = st.columns(2)
@@ -104,7 +136,10 @@ with col2:
 
 selected = df[df["지역명"] == region].iloc[0]
 
-# 5. 연령별 남녀 꺾은선그래프
+# =========================
+# 6. 연령별 남녀 인구 그래프
+# =========================
+
 st.divider()
 st.subheader("📈 연령별 남녀 인구 통계")
 
@@ -120,6 +155,7 @@ female_values = [
 
 fig = go.Figure()
 
+# 남성 그래프
 fig.add_trace(
     go.Scatter(
         x=ages,
@@ -132,6 +168,7 @@ fig.add_trace(
     )
 )
 
+# 여성 그래프
 fig.add_trace(
     go.Scatter(
         x=ages,
@@ -144,8 +181,11 @@ fig.add_trace(
     )
 )
 
-max_value = max(male_values + female_values) if ages else 0
-y_max = max(100000, (int(max_value) // 100000 + 1) * 100000)
+max_value = max(male_values + female_values)
+y_max = max(
+    100000,
+    (int(max_value) // 100000 + 1) * 100000
+)
 
 fig.update_layout(
     title=f"{region} {year}년 연령별 남녀 인구 비교",
@@ -172,9 +212,15 @@ fig.update_layout(
     )
 )
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
 
-# 6. 남녀 인구 비율 원형그래프
+# =========================
+# 7. 남녀 인구 비율 원형그래프
+# =========================
+
 st.divider()
 st.subheader("🥧 남녀 인구 비율")
 
@@ -193,9 +239,13 @@ with pie_col1:
                 marker=dict(
                     colors=["#87CEEB", "#FFB6C1"]
                 ),
-                hole=0,
                 textinfo="label+percent",
-                hovertemplate="%{label}<br>%{value:,.0f}명<br>%{percent}<extra></extra>"
+                hovertemplate=(
+                    "%{label}<br>"
+                    "%{value:,.0f}명<br>"
+                    "%{percent}"
+                    "<extra></extra>"
+                )
             )
         ]
     )
@@ -205,14 +255,20 @@ with pie_col1:
         height=400
     )
 
-    st.plotly_chart(pie_fig, use_container_width=True)
+    st.plotly_chart(
+        pie_fig,
+        use_container_width=True
+    )
 
 with pie_col2:
     st.metric("남성 인구", f"{male_total:,.0f}명")
     st.metric("여성 인구", f"{female_total:,.0f}명")
     st.metric("전체 인구", f"{total_population:,.0f}명")
 
-# 7. 연령대별 행정구역 TOP 10
+# =========================
+# 8. 연령대별 행정구역 TOP 10
+# =========================
+
 st.divider()
 st.subheader("🏆 연령대별 행정구역 TOP 10")
 
@@ -237,13 +293,22 @@ rank_prefix = {
     "여성": "여_"
 }[rank_gender]
 
+rank_color = {
+    "전체": "#B39DDB",
+    "남성": "#87CEEB",
+    "여성": "#FFB6C1"
+}[rank_gender]
+
 rank_column = f"{year}년_{rank_prefix}거주자_{selected_age}"
 
 if rank_column not in df.columns:
     st.error(f"TOP 10 데이터 열을 찾을 수 없습니다: {rank_column}")
     st.stop()
 
-rank_df = df[df["지역명"] != "인천광역시"].copy()
+rank_df = df[
+    df["지역명"] != "인천광역시"
+].copy()
+
 rank_df["인구수"] = rank_df[rank_column].apply(get_number)
 
 rank_df = (
@@ -258,10 +323,16 @@ rank_fig.add_trace(
     go.Bar(
         x=rank_df["지역명"],
         y=rank_df["인구수"],
-        marker_color="#B39DDB",
-        text=rank_df["인구수"].apply(lambda x: f"{x:,.0f}명"),
+        marker_color=rank_color,
+        text=rank_df["인구수"].apply(
+            lambda x: f"{x:,.0f}명"
+        ),
         textposition="outside",
-        hovertemplate="%{x}<br>인구수: %{y:,.0f}명<extra></extra>"
+        hovertemplate=(
+            "%{x}<br>"
+            "인구수: %{y:,.0f}명"
+            "<extra></extra>"
+        )
     )
 )
 
@@ -275,9 +346,42 @@ rank_fig.update_layout(
     height=500
 )
 
-st.plotly_chart(rank_fig, use_container_width=True)
+st.plotly_chart(
+    rank_fig,
+    use_container_width=True
+)
 
-# 8. 연령별 상세 데이터
+# =========================
+# 9. 인구 분석 결과
+# =========================
+
+st.divider()
+st.subheader("📌 인구 분석 결과")
+
+result1, result2, result3 = st.columns(3)
+
+with result1:
+    st.metric(
+        "남성 인구",
+        f"{male_total:,.0f}명"
+    )
+
+with result2:
+    st.metric(
+        "여성 인구",
+        f"{female_total:,.0f}명"
+    )
+
+with result3:
+    st.metric(
+        "전체 인구",
+        f"{total_population:,.0f}명"
+    )
+
+# =========================
+# 10. 연령별 상세 데이터
+# =========================
+
 st.divider()
 st.subheader("📋 연령별 남녀 상세 데이터")
 
@@ -286,7 +390,8 @@ detail_df = pd.DataFrame({
     "남성 인구": male_values,
     "여성 인구": female_values,
     "전체 인구": [
-        m + f for m, f in zip(male_values, female_values)
+        m + f
+        for m, f in zip(male_values, female_values)
     ]
 })
 
