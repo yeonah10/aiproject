@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 st.title("📊 인천광역시 인구통계 분석")
-st.write("인천광역시의 지역별, 연도별, 성별 인구를 분석합니다.")
+st.write("지역별, 연도별, 성별 인구를 확인할 수 있습니다.")
 
 
 # =========================
@@ -36,7 +36,7 @@ CSV_PATH = next(
 
 if CSV_PATH is None:
     st.error("CSV 파일을 찾을 수 없습니다.")
-    st.write("저장소 최상위 폴더에 population_utf8.csv 파일을 넣어 주세요.")
+    st.write("population_utf8.csv 파일을 저장소 최상위 폴더에 넣어 주세요.")
     st.stop()
 
 
@@ -46,7 +46,6 @@ def load_data(path):
         data = pd.read_csv(path, encoding="utf-8-sig")
     except UnicodeDecodeError:
         data = pd.read_csv(path, encoding="cp949")
-
     return data
 
 
@@ -108,7 +107,7 @@ with col1:
 with col2:
     gender = st.selectbox(
         "성별 선택",
-        ["전체", "남성", "여성"]
+        ["전체", "남성", "여성", "남녀 비교"]
     )
 
 with col3:
@@ -133,58 +132,7 @@ selected = selected_data.iloc[0]
 
 
 # =========================
-# 7. 성별에 따른 색상
-# =========================
-
-if gender == "여성":
-    graph_color = "#FFB6C1"
-
-elif gender == "남성":
-    graph_color = "#87CEEB"
-
-else:
-    graph_color = "#B39DDB"
-
-
-gender_prefix = {
-    "전체": "",
-    "남성": "남_",
-    "여성": "여_"
-}[gender]
-
-
-# =========================
-# 8. 연령별 인구 데이터
-# =========================
-
-values = []
-
-for age in ages:
-
-    column_name = f"{year}년_{gender_prefix}거주자_{age}"
-
-    if column_name not in df.columns:
-        st.error(f"데이터 열이 없습니다: {column_name}")
-        st.stop()
-
-    value = pd.to_numeric(
-        str(selected[column_name]).replace(",", ""),
-        errors="coerce"
-    )
-
-    values.append(value)
-
-
-chart_df = pd.DataFrame({
-    "나이": ages,
-    "인구수": values
-})
-
-chart_df["인구수"] = chart_df["인구수"].fillna(0)
-
-
-# =========================
-# 9. 연령별 꺾은선 그래프
+# 7. 연령별 인구 꺾은선 그래프
 # =========================
 
 st.divider()
@@ -192,56 +140,178 @@ st.subheader("📈 연령별 인구 그래프")
 
 fig = go.Figure()
 
-fig.add_trace(
-    go.Scatter(
-        x=chart_df["나이"],
-        y=chart_df["인구수"],
-        mode="lines+markers",
-        name="인구수",
+if gender == "남녀 비교":
 
-        line=dict(
-            color=graph_color,
-            width=4
-        ),
+    male_values = []
+    female_values = []
 
-        marker=dict(
-            color=graph_color,
-            size=9
-        ),
+    for age in ages:
 
-        hovertemplate=(
-            "%{x}<br>"
-            "인구수: %{y:,.0f}명"
-            "<extra></extra>"
+        male_col = f"{year}년_남_거주자_{age}"
+        female_col = f"{year}년_여_거주자_{age}"
+
+        if male_col not in df.columns or female_col not in df.columns:
+            st.error("남녀 인구 데이터 열을 찾을 수 없습니다.")
+            st.stop()
+
+        male_value = pd.to_numeric(
+            str(selected[male_col]).replace(",", ""),
+            errors="coerce"
+        )
+
+        female_value = pd.to_numeric(
+            str(selected[female_col]).replace(",", ""),
+            errors="coerce"
+        )
+
+        male_values.append(male_value)
+        female_values.append(female_value)
+
+    # 남성 그래프
+    fig.add_trace(
+        go.Scatter(
+            x=ages,
+            y=male_values,
+            mode="lines+markers",
+            name="남성",
+            line=dict(
+                color="#87CEEB",
+                width=4
+            ),
+            marker=dict(
+                color="#87CEEB",
+                size=9
+            )
         )
     )
-)
+
+    # 여성 그래프
+    fig.add_trace(
+        go.Scatter(
+            x=ages,
+            y=female_values,
+            mode="lines+markers",
+            name="여성",
+            line=dict(
+                color="#FFB6C1",
+                width=4
+            ),
+            marker=dict(
+                color="#FFB6C1",
+                size=9
+            )
+        )
+    )
+
+    all_values = male_values + female_values
+
+else:
+
+    gender_prefix = {
+        "전체": "",
+        "남성": "남_",
+        "여성": "여_"
+    }[gender]
+
+    graph_color = {
+        "전체": "#B39DDB",
+        "남성": "#87CEEB",
+        "여성": "#FFB6C1"
+    }[gender]
+
+    values = []
+
+    for age in ages:
+
+        column_name = f"{year}년_{gender_prefix}거주자_{age}"
+
+        if column_name not in df.columns:
+            st.error(f"데이터 열이 없습니다: {column_name}")
+            st.stop()
+
+        value = pd.to_numeric(
+            str(selected[column_name]).replace(",", ""),
+            errors="coerce"
+        )
+
+        values.append(value)
+
+    fig.add_trace(
+        go.Scatter(
+            x=ages,
+            y=values,
+            mode="lines+markers",
+            name=gender,
+            line=dict(
+                color=graph_color,
+                width=4
+            ),
+            marker=dict(
+                color=graph_color,
+                size=9
+            )
+        )
+    )
+
+    all_values = values
+
+
+# 세로축 설정
+valid_values = [
+    value for value in all_values
+    if pd.notna(value)
+]
+
+max_value = max(valid_values) if valid_values else 0
 
 y_max = max(
     100000,
-    (int(chart_df["인구수"].max()) // 100000 + 1) * 100000
+    (int(max_value) // 100000 + 1) * 100000
 )
 
+
+# 그래프 디자인
 fig.update_layout(
-    title=f"{region} {year}년 {gender} 연령별 인구",
+    title={
+        "text": f"{region} {year}년 연령별 인구",
+        "x": 0.5
+    },
 
     xaxis=dict(
         title="연령대",
         tickmode="array",
         tickvals=ages,
-        ticktext=ages
+        ticktext=ages,
+        showgrid=True,
+        gridcolor="#D6EAF5"
     ),
 
     yaxis=dict(
         title="인구수 (명)",
         range=[0, y_max],
         dtick=100000,
-        tickformat=","
+        tickformat=",",
+        showgrid=True,
+        gridcolor="#D6EAF5"
     ),
 
     plot_bgcolor="white",
     paper_bgcolor="white",
-    height=500
+    font=dict(
+        family="sans-serif",
+        size=13,
+        color="#333333"
+    ),
+
+    hovermode="x unified",
+    height=550,
+    legend=dict(
+        title="성별",
+        orientation="h",
+        y=1.1,
+        x=0.5,
+        xanchor="center"
+    )
 )
 
 st.plotly_chart(
@@ -251,78 +321,7 @@ st.plotly_chart(
 
 
 # =========================
-# 10. 남녀 인구 비율 원형 그래프
-# =========================
-
-st.divider()
-st.subheader("🥧 남녀 인구 비율")
-
-male_column = f"{year}년_남_거주자_총인구수"
-female_column = f"{year}년_여_거주자_총인구수"
-
-male_population = pd.to_numeric(
-    str(selected[male_column]).replace(",", ""),
-    errors="coerce"
-)
-
-female_population = pd.to_numeric(
-    str(selected[female_column]).replace(",", ""),
-    errors="coerce"
-)
-
-male_population = 0 if pd.isna(male_population) else male_population
-female_population = 0 if pd.isna(female_population) else female_population
-
-fig_gender = go.Figure(
-    data=[
-        go.Pie(
-            labels=["남성", "여성"],
-
-            values=[
-                male_population,
-                female_population
-            ],
-
-            hole=0.35,
-
-            marker=dict(
-                colors=[
-                    "#87CEEB",
-                    "#FFB6C1"
-                ]
-            ),
-
-            textinfo="label+percent",
-
-            hovertemplate=(
-                "%{label}<br>"
-                "인구수: %{value:,.0f}명<br>"
-                "비율: %{percent}"
-                "<extra></extra>"
-            )
-        )
-    ]
-)
-
-fig_gender.update_layout(
-    title={
-        "text": f"{region} {year}년 남녀 인구 비율",
-        "x": 0.5
-    },
-
-    height=450,
-    paper_bgcolor="white",
-    showlegend=True
-)
-
-st.plotly_chart(
-    fig_gender,
-    use_container_width=True
-)
-
-
-# =========================
-# 11. 연령대별 행정구역 TOP 10
+# 8. 연령대별 행정구역 TOP 10
 # =========================
 
 st.divider()
@@ -358,7 +357,7 @@ if rank_column not in df.columns:
     st.stop()
 
 
-# 인천광역시 전체 행 제외
+# 인천광역시 전체 제외
 rank_df = df[
     df["지역명"] != "인천광역시"
 ].copy()
@@ -382,15 +381,11 @@ fig_rank.add_trace(
     go.Bar(
         x=rank_df["지역명"],
         y=rank_df["인구수"],
-
         marker_color="#B39DDB",
-
         text=rank_df["인구수"].apply(
             lambda x: f"{x:,.0f}명"
         ),
-
         textposition="outside",
-
         hovertemplate=(
             "%{x}<br>"
             "인구수: %{y:,.0f}명"
@@ -401,14 +396,9 @@ fig_rank.add_trace(
 
 fig_rank.update_layout(
     title=f"{year}년 {selected_age} {rank_gender} 인구 TOP 10",
-
     xaxis_title="행정구역",
     yaxis_title="인구수 (명)",
-
-    yaxis=dict(
-        tickformat=","
-    ),
-
+    yaxis=dict(tickformat=","),
     plot_bgcolor="white",
     paper_bgcolor="white",
     height=500
@@ -421,7 +411,7 @@ st.plotly_chart(
 
 
 # =========================
-# 12. 인구 분석 결과
+# 9. 인구 분석 결과
 # =========================
 
 st.divider()
@@ -429,12 +419,15 @@ st.subheader("📌 인구 분석 결과")
 
 col1, col2 = st.columns(2)
 
-total = chart_df["인구수"].sum()
+if gender == "남녀 비교":
+    total = sum(valid_values)
+else:
+    total = sum(valid_values)
 
-max_age = chart_df.loc[
-    chart_df["인구수"].idxmax(),
-    "나이"
-]
+if valid_values:
+    max_age = ages[all_values.index(max(valid_values))]
+else:
+    max_age = "데이터 없음"
 
 with col1:
     st.metric(
@@ -450,17 +443,35 @@ with col2:
 
 
 # =========================
-# 13. 상세 데이터
+# 10. 상세 데이터
 # =========================
 
 st.divider()
 st.subheader("📋 연령별 상세 데이터")
 
-display_df = chart_df.copy()
+if gender == "남녀 비교":
 
-display_df["인구수"] = display_df["인구수"].apply(
-    lambda x: f"{x:,.0f}명"
-)
+    display_df = pd.DataFrame({
+        "연령대": ages,
+        "남성 인구": male_values,
+        "여성 인구": female_values
+    })
+
+    for column in ["남성 인구", "여성 인구"]:
+        display_df[column] = display_df[column].apply(
+            lambda x: f"{x:,.0f}명" if pd.notna(x) else "자료 없음"
+        )
+
+else:
+
+    display_df = pd.DataFrame({
+        "연령대": ages,
+        "인구수": values
+    })
+
+    display_df["인구수"] = display_df["인구수"].apply(
+        lambda x: f"{x:,.0f}명" if pd.notna(x) else "자료 없음"
+    )
 
 st.dataframe(
     display_df,
