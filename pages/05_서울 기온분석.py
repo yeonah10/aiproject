@@ -68,10 +68,18 @@ df["최저기온(℃)"] = pd.to_numeric(
 st.subheader("📅 분석할 월 선택")
 
 month_names = {
-    1: "1월", 2: "2월", 3: "3월",
-    4: "4월", 5: "5월", 6: "6월",
-    7: "7월", 8: "8월", 9: "9월",
-    10: "10월", 11: "11월", 12: "12월"
+    1: "1월",
+    2: "2월",
+    3: "3월",
+    4: "4월",
+    5: "5월",
+    6: "6월",
+    7: "7월",
+    8: "8월",
+    9: "9월",
+    10: "10월",
+    11: "11월",
+    12: "12월"
 }
 
 selected_month = st.selectbox(
@@ -94,59 +102,4 @@ result = (
     month_df.groupby("연도")
     .agg({
         "최고기온(℃)": "max",
-        "최저기온(℃)": "min"
-    })
-    .reset_index()
-    .sort_values("연도")
-)
-
-# =========================
-# 6. 기온 그래프
-# =========================
-
-st.divider()
-
-fig = go.Figure()
-
-# 최고기온 - 빨간색
-fig.add_trace(
-    go.Scatter(
-        x=result["연도"],
-        y=result["최고기온(℃)"],
-        mode="lines+markers",
-        name="최고기온",
-        line=dict(color="#FF4B4B", width=3),
-        marker=dict(size=8, color="#FF4B4B")
-    )
-)
-
-# 최저기온 - 하늘색
-fig.add_trace(
-    go.Scatter(
-        x=result["연도"],
-        y=result["최저기온(℃)"],
-        mode="lines+markers",
-        name="최저기온",
-        line=dict(color="#87CEEB", width=3),
-        marker=dict(size=8, color="#87CEEB")
-    )
-)
-
-# 그래프 제목 및 설정
-fig.update_layout(
-    title={
-        "text": "월별 기온분석",
-        "x": 0.5,
-        "xanchor": "center"
-    },
-    xaxis_title="연도",
-    yaxis_title="온도(℃)",
-    legend_title="기온 구분",
-    hovermode="x unified",
-    height=550,
-    template="plotly_white"
-)
-
-fig.update_xaxes(dtick=1)
-
-st.plotly_chart
+        "최
