@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -14,7 +15,7 @@ st.set_page_config(
 )
 
 st.title("🌡️ 월별 기온분석")
-st.write("원하는 월을 선택하면 전체 연도의 최고기온과 최저기온을 비교할 수 있습니다.")
+st.write("원하는 월을 선택하여 전체 연도의 최고기온과 최저기온을 비교해 보세요.")
 
 # =========================
 # 2. CSV 파일 불러오기
@@ -31,12 +32,11 @@ if not file_path.exists():
 
 try:
     df = pd.read_csv(file_path, encoding="cp949")
-except Exception:
+except UnicodeDecodeError:
     try:
         df = pd.read_csv(file_path, encoding="euc-kr")
-    except Exception as e:
-        st.error(f"CSV 파일을 읽을 수 없습니다: {e}")
-        st.stop()
+    except UnicodeDecodeError:
+        df = pd.read_csv(file_path, encoding="utf-8-sig")
 
 # =========================
 # 3. 날짜 데이터 처리
@@ -53,7 +53,6 @@ df = df.dropna(subset=["일시"])
 df["연도"] = df["일시"].dt.year
 df["월"] = df["일시"].dt.month
 
-# 기온 데이터 숫자 변환
 df["최고기온(℃)"] = pd.to_numeric(
     df["최고기온(℃)"], errors="coerce"
 )
@@ -91,7 +90,6 @@ if month_df.empty:
     st.warning("선택한 월의 데이터가 없습니다.")
     st.stop()
 
-# 연도별 최고기온과 최저기온 정리
 result = (
     month_df.groupby("연도")
     .agg({
@@ -117,20 +115,20 @@ fig.add_trace(
         y=result["최고기온(℃)"],
         mode="lines+markers",
         name="최고기온",
-        line=dict(color="red", width=3),
-        marker=dict(size=8)
+        line=dict(color="#FF4B4B", width=3),
+        marker=dict(size=8, color="#FF4B4B")
     )
 )
 
-# 최저기온 - 파란색
+# 최저기온 - 하늘색
 fig.add_trace(
     go.Scatter(
         x=result["연도"],
         y=result["최저기온(℃)"],
         mode="lines+markers",
         name="최저기온",
-        line=dict(color="blue", width=3),
-        marker=dict(size=8)
+        line=dict(color="#87CEEB", width=3),
+        marker=dict(size=8, color="#87CEEB")
     )
 )
 
@@ -149,52 +147,6 @@ fig.update_layout(
     template="plotly_white"
 )
 
-fig.update_xaxes(
-    dtick=1
-)
+fig.update_xaxes(dtick=1)
 
-st.plotly_chart(fig, use_container_width=True)
-
-# =========================
-# 7. 데이터 표
-# =========================
-
-st.divider()
-
-st.subheader(f"📊 {month_names[selected_month]} 연도별 기온 데이터")
-
-display_df = result.rename(columns={
-    "연도": "연도",
-    "최고기온(℃)": "최고기온(℃)",
-    "최저기온(℃)": "최저기온(℃)"
-})
-
-st.dataframe(
-    display_df,
-    use_container_width=True,
-    hide_index=True
-)
-
-# =========================
-# 8. 요약 분석
-# =========================
-
-st.divider()
-
-col1, col2 = st.columns(2)
-
-with col1:
-    max_row = result.loc[result["최고기온(℃)"].idxmax()]
-    st.metric(
-        "🔥 역대 가장 높은 최고기온",
-        f"{max_row['최고기온(℃)']}℃",
-        f"{int(max_row['연도'])}년"
-    )
-
-with col2:
-    min_row = result.loc[result["최저기온(℃)"].idxmin()]
-    st.metric(
-        "❄️ 역대 가장 낮은 최저기온",
-        f"{min_row['최저기온(℃)']}℃",
-        f"{int(min_row['연도'])}년"
-    )
+st.plotly_chart
