@@ -378,4 +378,3 @@ st.write("""
 
 st.divider()
 st.caption("🌡️ 월별 평균기온 분석 및 선형회귀 예측 프로그램")
-ㅈㄴㅁ
