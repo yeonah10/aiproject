@@ -25,18 +25,21 @@ st.write(
 st.divider()
 
 # =====================================
-# 2. CSV 데이터 불러오기
+# 2. CSV 파일 불러오기
 # =====================================
 
 @st.cache_data
 def load_data():
 
-    file_path = Path(__file__).parent / "Iris.csv"
+    # pages 폴더의 상위 폴더로 이동
+    base_path = Path(__file__).resolve().parent.parent
+
+    file_path = base_path / "Iris.csv"
 
     if not file_path.exists():
         raise FileNotFoundError(
-            "Iris.csv 파일을 찾을 수 없습니다. "
-            "app.py와 같은 폴더에 있는지 확인해주세요."
+            f"Iris.csv 파일을 찾을 수 없습니다.\n"
+            f"검색한 위치: {file_path}"
         )
 
     encodings = [
@@ -46,22 +49,18 @@ def load_data():
         "utf-8"
     ]
 
-    data = None
-
     for encoding in encodings:
         try:
             data = pd.read_csv(
                 file_path,
                 encoding=encoding
             )
-            break
+            return data
+
         except UnicodeDecodeError:
             continue
 
-    if data is None:
-        raise ValueError("CSV 파일의 인코딩을 확인해주세요.")
-
-    return data
+    raise ValueError("CSV 파일의 인코딩을 확인해주세요.")
 
 
 try:
@@ -70,6 +69,7 @@ try:
 except Exception as e:
     st.error(str(e))
     st.stop()
+
 
 # 필요한 컬럼 확인
 required_columns = [
@@ -80,9 +80,11 @@ required_columns = [
 
 if not all(col in df.columns for col in required_columns):
     st.error(
-        "CSV 파일의 컬럼명이 코드와 일치하지 않습니다."
+        "CSV 파일의 컬럼명이 올바르지 않습니다."
     )
+    st.write("현재 CSV 컬럼:", df.columns.tolist())
     st.stop()
+
 
 # 숫자형 변환
 df["꽃잎길이"] = pd.to_numeric(
@@ -103,8 +105,9 @@ if df.empty:
     st.error("분석할 데이터가 없습니다.")
     st.stop()
 
+
 # =====================================
-# 3. 입력 범위 표시
+# 3. 입력 가능한 범위
 # =====================================
 
 length_min = float(df["꽃잎길이"].min())
@@ -130,10 +133,11 @@ with col2:
     )
 
 st.info(
-    "위 범위는 CSV 데이터의 실제 최솟값과 최댓값입니다."
+    "위 범위는 Iris.csv 데이터의 실제 최솟값과 최댓값입니다."
 )
 
 st.divider()
+
 
 # =====================================
 # 4. 랜덤 포레스트 모델 학습
@@ -150,6 +154,7 @@ model = RandomForestClassifier(
 model.fit(X, y)
 
 classes = model.classes_
+
 
 # =====================================
 # 5. 사용자 입력
@@ -183,6 +188,7 @@ predict_button = st.button(
     use_container_width=True
 )
 
+
 # =====================================
 # 6. 품종 예측
 # =====================================
@@ -200,22 +206,23 @@ if predict_button:
 
     st.divider()
 
-    st.subheader("🔍 예측 결과")
+    st.subheader("🔍 붓꽃 품종 예측 결과")
 
     st.success(
         f"예측된 붓꽃 품종: {prediction}"
     )
 
     st.write(
-        f"입력한 꽃잎 길이: {petal_length:.1f}cm"
+        f"꽃잎 길이: **{petal_length:.1f}cm**"
     )
 
     st.write(
-        f"입력한 꽃잎 너비: {petal_width:.1f}cm"
+        f"꽃잎 너비: **{petal_width:.1f}cm**"
     )
 
+
     # =====================================
-    # 7. 예측 확률 그래프
+    # 7. 품종별 예측 확률
     # =====================================
 
     st.subheader("📊 품종별 예측 확률")
@@ -257,8 +264,9 @@ if predict_button:
         use_container_width=True
     )
 
+
     # =====================================
-    # 8. 결정 영역 시각화
+    # 8. 품종별 결정 영역 그래프
     # =====================================
 
     st.subheader("🌈 꽃잎 크기에 따른 품종 분류 그래프")
@@ -288,7 +296,7 @@ if predict_button:
         "꽃잎너비": yy.ravel()
     })
 
-    # 격자별 품종 예측
+    # 격자 위치별 품종 예측
     grid_predictions = model.predict(grid_data)
 
     class_mapping = {
@@ -309,7 +317,7 @@ if predict_button:
 
     fig = go.Figure()
 
-    # 품종별 분류 영역
+    # 배경 분류 영역
     fig.add_trace(
         go.Heatmap(
             x=np.linspace(x_min, x_max, 180),
@@ -329,7 +337,7 @@ if predict_button:
         )
     )
 
-    # 기존 데이터 표시
+    # 기존 붓꽃 데이터
     for i, species in enumerate(classes):
 
         species_data = df[
@@ -406,8 +414,9 @@ if predict_button:
         use_container_width=True
     )
 
+
     # =====================================
-    # 9. 예측 이유
+    # 9. 예측 이유 설명
     # =====================================
 
     st.subheader("💡 왜 이 품종으로 분류되었을까?")
@@ -438,6 +447,7 @@ else:
         "꽃잎 길이와 너비를 입력한 다음 "
         "'품종 예측하기' 버튼을 눌러주세요."
     )
+
 
 # =====================================
 # 10. 데이터 정보
