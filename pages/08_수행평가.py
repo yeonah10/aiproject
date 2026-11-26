@@ -1,164 +1,247 @@
 import streamlit as st
 import pandas as pd
 import folium
-from folium.plugins import MarkerCluster
-import streamlit.components.v1 as components
+import html
+import time
+import os
 
-st.set_page_config(
-    page_title="미쉐린 식당 지도",
-    layout="wide"
-)
+from geopy.geocoders import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
+from streamlit.components.v1 import html as st_html
+
+st.set_page_config(page_title="미쉐린 식당 지도", layout="wide")
 
 st.title("🍽️ 미쉐린 식당 지도")
-st.write("CSV에 저장된 모든 식당을 지도에 표시합니다.")
+st.write("CSV에 있는 식당을 찾아 지도에 표시하는 프로그램")
 
 # CSV 업로드
-uploaded_file = st.file_uploader(
-    "식당 CSV 파일을 업로드하세요",
-    type=["csv"]
-)
+file = st.file_uploader("CSV 파일 업로드", type=["csv"])
 
-if uploaded_file is not None:
+if file is not None:
 
     # CSV 읽기
     try:
-        df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
+        df = pd.read_csv(file, encoding="utf-8-sig")
     except Exception:
-        df = pd.read_csv(uploaded_file, encoding="cp949")
+        df = pd.read_csv(file, encoding="cp949")
 
-    # 컬럼명 공백 제거
     df.columns = df.columns.str.strip()
 
-    # 필수 좌표 컬럼 확인
-    if "위도" not in df.columns or "경도" not in df.columns:
-        st.error("CSV에 위도와 경도 컬럼이 있어야 합니다.")
-        st.write("현재 CSV 컬럼:", list(df.columns))
+    # 네 CSV 컬럼 확인
+    required_columns = [
+        "식당명",
+        "지역",
+        "미쉐린 등급",
+        "음식 종류",
+        "가격 기준",
+        "공식 링크",
+        "출처/확인 상태"
+    ]
+
+    missing = [c for c in required_columns if c not in df.columns]
+
+    if missing:
+        st.error(f"CSV에 없는 컬럼: {missing}")
+        st.write("현재 CSV 컬럼:", df.columns.tolist())
         st.stop()
 
-    # 좌표 숫자로 변환
-    df["위도"] = pd.to_numeric(df["위도"], errors="coerce")
-    df["경도"] = pd.to_numeric(df["경도"], errors="coerce")
+    st.success(f"CSV에서 {len(df)}개 식당을 불러왔습니다.")
 
-    # 좌표가 있는 식당 전부 추출
-    map_df = df.dropna(subset=["위도", "경도"]).copy()
+    st.dataframe(df, use_container_width=True)
 
-    # 기본값 처리
-    for col in ["식당명", "지역", "음식 종류", "미쉐린 등급", "미쉐린 가격대", "가격"]:
-        if col not in map_df.columns:
-            map_df[col] = "정보 없음"
+    # 위치 찾기 버튼
+    if st.button("📍 식당 전체 위치 찾기", type="primary"):
 
-    # 상단 통계
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("CSV 전체 식당", len(df))
-    col2.metric("지도 표시 식당", len(map_df))
-    col3.metric("좌표 누락 식당", len(df) - len(map_df))
-
-    if len(map_df) == 0:
-        st.error("표시할 좌표 데이터가 없습니다.")
-        st.stop()
-
-    # 검색
-    search = st.text_input("🔍 식당 이름 검색")
-
-    if search:
-        map_df = map_df[
-            map_df["식당명"].astype(str).str.contains(
-                search, case=False, na=False
-            )
-        ]
-
-    # 지역 필터
-    if "지역" in map_df.columns:
-        regions = map_df["지역"].dropna().unique().tolist()
-
-        selected_regions = st.multiselect(
-            "지역 선택",
-            regions,
-            default=regions
+        geolocator = Nominatim(
+            user_agent="michelin_restaurant_school_map"
         )
 
-        map_df = map_df[map_df["지역"].isin(selected_regions)]
+        results = []
 
-    # 지도 중심 좌표 자동 계산
-    center_lat = map_df["위도"].mean()
-    center_lon = map_df["경도"].mean()
+        progress = st.progress(0)
+        status = st.empty()
 
-    # 지도 생성 (API KEY 없는 OpenStreetMap)
-    m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=7,
-        tiles="OpenStreetMap"
-    )
+        for i, row in df.iterrows():
 
-    # 마커 그룹 생성
-    marker_cluster = MarkerCluster().add_to(m)
+            name = str(row["식당명"])
+            region = str(row["지역"])
 
-    # CSV에 남아 있는 모든 식당을 반복해서 지도에 표시
-    for _, row in map_df.iterrows():
+            status.write(f"위치 검색 중: {name}")
 
-        name = str(row["식당명"])
-        region = str(row["지역"])
-        cuisine = str(row["음식 종류"])
-        grade = str(row["미쉐린 등급"])
-        price = str(row["미쉐린 가격대"])
+            # 지역 + 식당명으로 검색
+            query = f"{name}, {region}, 대한민국"
 
-        popup_html = f"""
-        <div style="width:230px">
-            <h4>{name}</h4>
-            <b>지역:</b> {region}<br>
-            <b>음식 종류:</b> {cuisine}<br>
-            <b>미쉐린 등급:</b> {grade}<br>
-            <b>가격대:</b> {price}<br>
-        </div>
-        """
+            try:
+                location = geolocator.geocode(
+                    query,
+                    timeout=15,
+                    country_codes="kr"
+                )
 
-        folium.Marker(
-            location=[row["위도"], row["경도"]],
-            popup=folium.Popup(
-                popup_html,
-                max_width=300
-            ),
-            tooltip=name,
-            icon=folium.Icon(
-                color="red",
-                icon="cutlery",
-                prefix="fa"
-            )
-        ).add_to(marker_cluster)
+                # 검색 실패 시 식당명 + 한국으로 재검색
+                if location is None:
+                    location = geolocator.geocode(
+                        f"{name}, South Korea",
+                        timeout=15,
+                        country_codes="kr"
+                    )
 
-    # 지도 출력
-    st.subheader("📍 전체 식당 지도")
+                if location:
+                    results.append({
+                        "식당명": name,
+                        "지역": region,
+                        "미쉐린 등급": row["미쉐린 등급"],
+                        "음식 종류": row["음식 종류"],
+                        "가격 기준": row["가격 기준"],
+                        "공식 링크": row["공식 링크"],
+                        "출처/확인 상태": row["출처/확인 상태"],
+                        "위도": location.latitude,
+                        "경도": location.longitude,
+                        "검색된 주소": location.address
+                    })
 
-    map_html = m.get_root().render()
+                else:
+                    results.append({
+                        "식당명": name,
+                        "지역": region,
+                        "미쉐린 등급": row["미쉐린 등급"],
+                        "음식 종류": row["음식 종류"],
+                        "가격 기준": row["가격 기준"],
+                        "공식 링크": row["공식 링크"],
+                        "출처/확인 상태": row["출처/확인 상태"],
+                        "위도": None,
+                        "경도": None,
+                        "검색된 주소": "위치 검색 실패"
+                    })
 
-    components.html(
-        map_html,
-        height=650,
-        scrolling=True
-    )
+            except Exception as e:
+                results.append({
+                    "식당명": name,
+                    "지역": region,
+                    "미쉐린 등급": row["미쉐린 등급"],
+                    "음식 종류": row["음식 종류"],
+                    "가격 기준": row["가격 기준"],
+                    "공식 링크": row["공식 링크"],
+                    "출처/확인 상태": row["출처/확인 상태"],
+                    "위도": None,
+                    "경도": None,
+                    "검색된 주소": f"오류: {e}"
+                })
 
-    # 식당 목록도 전부 표시
-    st.subheader("📋 지도에 표시된 전체 식당")
+            progress.progress((i + 1) / len(df))
 
-    st.dataframe(
-        map_df,
-        use_container_width=True,
-        hide_index=True
-    )
+            # 무료 지오코딩 서버 요청 간격 준수
+            time.sleep(1.1)
 
-    # CSV 다운로드
-    csv_data = map_df.to_csv(
+        # 검색 결과 저장
+        result_df = pd.DataFrame(results)
+
+        st.session_state["restaurant_locations"] = result_df
+
+        status.write("위치 검색 완료!")
+
+# 검색된 데이터가 있을 때 지도 표시
+if "restaurant_locations" in st.session_state:
+
+    result_df = st.session_state["restaurant_locations"]
+
+    # 좌표가 존재하는 식당
+    map_df = result_df.dropna(subset=["위도", "경도"]).copy()
+
+    st.divider()
+    st.subheader("📊 검색 결과")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("CSV 전체 식당", len(result_df))
+    c2.metric("지도 표시 가능", len(map_df))
+    c3.metric("위치 검색 실패", len(result_df) - len(map_df))
+
+    # 실패한 식당 표시
+    failed_df = result_df[result_df["위도"].isna()]
+
+    if not failed_df.empty:
+        st.warning("일부 식당의 위치를 찾지 못했습니다.")
+        st.dataframe(failed_df[["식당명", "지역", "검색된 주소"]])
+
+    if not map_df.empty:
+
+        # 지도 중심
+        center_lat = map_df["위도"].mean()
+        center_lon = map_df["경도"].mean()
+
+        # API KEY 없는 OpenStreetMap
+        m = folium.Map(
+            location=[center_lat, center_lon],
+            zoom_start=7,
+            tiles="OpenStreetMap"
+        )
+
+        # 식당 마커
+        for _, row in map_df.iterrows():
+
+            name = html.escape(str(row["식당명"]))
+            region = html.escape(str(row["지역"]))
+            grade = html.escape(str(row["미쉐린 등급"]))
+            cuisine = html.escape(str(row["음식 종류"]))
+            price = html.escape(str(row["가격 기준"]))
+            address = html.escape(str(row["검색된 주소"]))
+            link = str(row["공식 링크"]).strip()
+
+            popup_content = f"""
+            <div style="width:260px; font-family:sans-serif;">
+                <h3>{name}</h3>
+                <b>지역:</b> {region}<br>
+                <b>미쉐린 등급:</b> {grade}<br>
+                <b>음식 종류:</b> {cuisine}<br>
+                <b>가격 기준:</b> {price}<br>
+                <b>주소:</b> {address}<br>
+            """
+
+            if link.startswith("https://") or link.startswith("http://"):
+                safe_link = html.escape(link, quote=True)
+                popup_content += f"""
+                <br><a href="{safe_link}" target="_blank">
+                공식 식당 정보 보기</a>
+                """
+
+            popup_content += "</div>"
+
+            folium.Marker(
+                location=[row["위도"], row["경도"]],
+                tooltip=name,
+                popup=folium.Popup(
+                    popup_content,
+                    max_width=350
+                ),
+                icon=folium.Icon(color="red", icon="cutlery")
+            ).add_to(m)
+
+        # 지도 출력
+        st.subheader("🗺️ 미쉐린 식당 전체 지도")
+
+        st_html(
+            m.get_root().render(),
+            height=600,
+            scrolling=True
+        )
+
+    # 전체 결과
+    st.subheader("📋 전체 식당 위치 데이터")
+    st.dataframe(result_df, use_container_width=True)
+
+    # 결과 CSV 다운로드
+    csv = result_df.to_csv(
         index=False,
         encoding="utf-8-sig"
     )
 
     st.download_button(
-        label="📥 식당 데이터 다운로드",
-        data=csv_data,
-        file_name="지도에_표시된_식당.csv",
+        "📥 좌표 포함 CSV 다운로드",
+        data=csv,
+        file_name="미쉐린_식당_좌표.csv",
         mime="text/csv"
     )
 
 else:
-    st.info("위에서 CSV 파일을 업로드하면 CSV 안의 모든 식당이 지도에 표시됩니다.")
+    st.info("CSV를 업로드한 뒤 '식당 전체 위치 찾기'를 누르세요.")
