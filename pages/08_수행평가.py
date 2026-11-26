@@ -1,129 +1,591 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import folium
+import time
+from geopy.geocoders import Nominatim
 from streamlit_folium import st_folium
+from pathlib import Path
 
-st.set_page_config(page_title="미쉐린 2026 식당 분석", page_icon="🍽️", layout="wide")
-st.title("🍽️ 미쉐린 가이드 2026 식당 분석")
-st.caption("현재 제공된 CSV 100행을 분석합니다. 전체 공식 233곳 목록이 아니며, 주소·실제 메뉴 가격은 데이터에 없습니다.")
+# ==========================================
+# 1. 페이지 설정
+# ==========================================
 
-DATA_PATH = "michelin_2026_korea.csv"
+st.set_page_config(
+    page_title="2026 미쉐린 식당 가이드",
+    page_icon="🍽️",
+    layout="wide"
+)
+
+st.title("🍽️ 2026 MICHELIN RESTAURANT GUIDE")
+st.caption("2026 미쉐린 서울·부산 식당 탐색 및 고등학생 추천")
+
+st.markdown("""
+미쉐린 선정 식당을 지역, 등급, 음식 종류별로 살펴보고
+방문하기 좋은 식당을 찾아보세요.
+""")
+
+# ==========================================
+# 2. 데이터 불러오기
+# ==========================================
+
 @st.cache_data
 def load_data():
-    df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
-    for col in ["식당명", "지역", "미쉐린 등급", "음식 종류", "가격 기준", "공식 링크", "출처/확인 상태"]:
-        if col not in df.columns:
-            df[col] = pd.NA
-    return df
+
+    file_path = Path(__file__).parent / "michelin_2026_korea.csv"
+
+    if not file_path.exists():
+        return None
+
+    try:
+        data = pd.read_csv(file_path, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        data = pd.read_csv(file_path, encoding="cp949")
+
+    data.columns = data.columns.str.strip()
+
+    for col in ["식당명", "지역", "미쉐린 등급", "음식 종류"]:
+        data[col] = data[col].fillna("").astype(str).str.strip()
+
+    data["가격 기준"] = data["가격 기준"].fillna("")
+    data["출처/확인 상태"] = data["출처/확인 상태"].fillna("")
+
+    return data
+
 
 df = load_data()
-df["음식 종류"] = df["음식 종류"].fillna("미확인")
-df["가격 기준"] = df["가격 기준"].fillna("가격 정보 없음")
-df["지역"] = df["지역"].fillna("지역 정보 없음")
 
-# Sidebar filters
-st.sidebar.header("검색 및 필터")
-city_options = sorted(df["지역"].dropna().unique().tolist())
-cities = st.sidebar.multiselect("지역", city_options, default=city_options)
-grade_options = sorted(df["미쉐린 등급"].dropna().unique().tolist())
-grades = st.sidebar.multiselect("등급", grade_options, default=grade_options)
-food_options = sorted(df["음식 종류"].dropna().unique().tolist())
-foods = st.sidebar.multiselect("음식 종류", food_options, default=food_options)
-search = st.sidebar.text_input("식당명 검색")
+if df is None:
+    st.error("michelin_2026_korea.csv 파일을 찾을 수 없습니다.")
+    st.info("app.py와 CSV 파일이 같은 폴더에 있는지 확인해주세요.")
+    st.stop()
 
-filtered = df[df["지역"].isin(cities) & df["미쉐린 등급"].isin(grades) & df["음식 종류"].isin(foods)]
-if search:
-    filtered = filtered[filtered["식당명"].str.contains(search, case=False, na=False)]
+# ==========================================
+# 3. 추천 순위 및 추천 이유
+# ==========================================
 
-# KPI
-c1,c2,c3,c4 = st.columns(4)
-c1.metric("현재 데이터 행", f"{len(df):,}")
-c2.metric("필터 결과", f"{len(filtered):,}")
-c3.metric("식당 이름 고유 수", f"{df['식당명'].nunique():,}")
-c4.metric("결측 음식 종류", f"{(df['음식 종류']=='미확인').sum():,}")
+recommendation_order = [
+    "미진",
+    "유림면",
+    "옥동식",
+    "교다이야",
+    "3대 삼계장인",
+    "필동면옥",
+    "정면",
+    "능동미나리",
+    "미필담",
+    "서교난면방",
+    "안덕",
+    "정짓간",
+    "뫼밀집",
+    "비비재",
+    "안목",
+    "나가하마 만게츠",
+    "백일평냉",
+    "한월관"
+]
 
-st.subheader("데이터 품질 요약")
-quality = pd.DataFrame({
-    "항목":["행 수","열 수","중복 행","식당명 중복","음식 종류 결측","가격 정보 결측","공식 링크 결측"],
-    "값":[len(df),df.shape[1],df.duplicated().sum(),df["식당명"].duplicated().sum(),
-           df["음식 종류"].isna().sum(),(df["가격 기준"]=="가격 정보 없음").sum(),df["공식 링크"].isna().sum()]
-})
-st.dataframe(quality, use_container_width=True, hide_index=True)
-st.warning("CSV에는 주소와 공식 링크가 비어 있습니다. 아래 지도는 개별 식당 위치가 아니라 서울·부산 도시 중심의 참고 마커입니다.")
-
-# charts
-left,right=st.columns(2)
-with left:
-    grade_count=filtered["미쉐린 등급"].value_counts().reset_index()
-    grade_count.columns=["등급","식당 수"]
-    st.plotly_chart(px.bar(grade_count,x="등급",y="식당 수",title="등급별 식당 수",text="식당 수"),use_container_width=True)
-with right:
-    city_count=filtered["지역"].value_counts().reset_index()
-    city_count.columns=["지역","식당 수"]
-    st.plotly_chart(px.pie(city_count,names="지역",values="식당 수",title="지역별 데이터 비중"),use_container_width=True)
-
-food_count=filtered["음식 종류"].value_counts().head(15).reset_index()
-food_count.columns=["음식 종류","식당 수"]
-st.plotly_chart(px.bar(food_count,x="식당 수",y="음식 종류",orientation="h",title="음식 종류 상위 15개"),use_container_width=True)
-
-st.subheader("식당 목록")
-st.dataframe(filtered[["식당명","지역","미쉐린 등급","음식 종류","가격 기준","출처/확인 상태"]],use_container_width=True,hide_index=True)
-
-# Student ranking: only Bib Gourmand rows are price-bounded in this CSV. Ranking is a transparent heuristic, not an objective review.
-st.subheader("🎓 고등학생 추천 TOP 10 (가격·메뉴 접근성 기준)")
-st.caption("빕 구르망으로 기록된 식당만 후보로 사용했습니다. 가이드의 4만 5천 원 이하 기준은 1인 메뉴가 아니라 가이드 기준이며, 실제 방문 전 메뉴 가격을 확인하세요. 점수는 데이터상 메뉴 친숙도 중심의 참고 순위입니다.")
-bib = df[df["미쉐린 등급"].eq("빕 구르망")].copy()
-rank_names = ["정짓간","옥동식","나가하마 만게츠","니시무라멘","교다이야","미진","서령","정면","능동미나리","황금콩밭"]
-rank_reason = {
-"정짓간":"돼지국밥—익숙한 메뉴, 빕 구르망 가격 기준",
-"옥동식":"돼지국밥—단품 식사 메뉴로 선택하기 쉬움",
-"나가하마 만게츠":"라멘—메뉴 선택이 비교적 단순하고 친숙함",
-"니시무라멘":"라멘—친숙한 면 요리",
-"교다이야":"우동—친숙한 면 요리",
-"미진":"메밀국수—간단한 면 메뉴",
-"서령":"메밀국수—면 요리 중심",
-"정면":"국수—친숙한 식사 메뉴",
-"능동미나리":"곰탕—한 끼 식사로 접근하기 쉬움",
-"황금콩밭":"두부 요리—식사 선택지가 비교적 담백함"
+recommendation_reasons = {
+    "미진": "친숙한 메밀국수 메뉴로 접근하기 좋은 식당",
+    "유림면": "메밀국수를 중심으로 즐길 수 있는 식당",
+    "옥동식": "한국인에게 친숙한 돼지고기 국물 요리",
+    "교다이야": "대중적인 우동을 전문적으로 즐길 수 있는 곳",
+    "3대 삼계장인": "익숙한 삼계탕을 전문적으로 맛볼 수 있는 곳",
+    "필동면옥": "전통적인 평양냉면을 경험할 수 있는 곳",
+    "정면": "다양한 국수 요리를 경험할 수 있는 곳",
+    "능동미나리": "한국적인 곰탕을 맛볼 수 있는 곳",
+    "미필담": "친숙한 만두 메뉴를 즐길 수 있는 곳",
+    "서교난면방": "독특한 면 요리를 경험할 수 있는 곳",
+    "안덕": "한식 국수와 만두를 즐길 수 있는 곳",
+    "정짓간": "부산의 대표적인 돼지국밥을 경험할 수 있는 곳",
+    "뫼밀집": "메밀을 활용한 면 요리를 즐길 수 있는 곳",
+    "비비재": "친숙한 비빔밥 전문점",
+    "안목": "부산의 돼지국밥을 현대적으로 경험할 수 있는 곳",
+    "나가하마 만게츠": "대중적인 라멘 전문점",
+    "백일평냉": "냉면을 중심으로 즐길 수 있는 곳",
+    "한월관": "친숙한 곰탕 전문점"
 }
-ranked = bib[bib["식당명"].isin(rank_names)].copy()
-ranked["순위"] = ranked["식당명"].map({n:i+1 for i,n in enumerate(rank_names)})
-ranked["추천 이유"] = ranked["식당명"].map(rank_reason)
-ranked = ranked.sort_values("순위")
-st.dataframe(ranked[["순위","식당명","지역","음식 종류","가격 기준","추천 이유"]],use_container_width=True,hide_index=True)
 
-# Price filter: data only supports Bib Gourmand price guideline; don't infer price tiers.
-st.subheader("💰 가격 정보별 추천")
-st.info("현재 파일에는 빕 구르망 54개에 대해서만 '4만 5천원 이하 (가이드 기준)'이 기록되어 있습니다. 별 식당의 가격은 비어 있어 가격대별 비교가 불가능합니다.")
-price_rows = bib[["식당명","지역","음식 종류","가격 기준"]].drop_duplicates()
-st.dataframe(price_rows,use_container_width=True,hide_index=True)
+priority = {
+    name: i + 1
+    for i, name in enumerate(recommendation_order)
+}
 
-# Folium city-level map
-st.subheader("🗺️ 지도")
-city_coords = {"서울": (37.5665,126.9780), "부산": (35.1796,129.0756)}
-city_data = filtered.groupby("지역").size().reset_index(name="현재 데이터 식당 수")
-m=folium.Map(location=[36.2,127.8],zoom_start=7,tiles="OpenStreetMap")
-for _,row in city_data.iterrows():
-    city=row["지역"]
-    if city in city_coords:
-        lat,lon=city_coords[city]
-        folium.Marker([lat,lon],tooltip=f"{city}: {row['현재 데이터 식당 수']}곳",
-                      popup=f"<b>{city}</b><br>현재 CSV 내 식당: {row['현재 데이터 식당 수']}곳",
-                      icon=folium.Icon(color="blue",icon="info-sign")).add_to(m)
-st_folium(m,width=None,height=520)
-st.caption("지도 마커는 도시 중심에 찍힌 지역 표시입니다. 식당별 주소/좌표가 확보되면 개별 식당 핀으로 바꿀 수 있습니다.")
+# 빕 구르망 중심으로 추천
+df["추천순위"] = df["식당명"].map(priority).fillna(999).astype(int)
 
-st.subheader("CSV 다운로드")
-csv_bytes = filtered.to_csv(index=False).encode("utf-8-sig")
-st.download_button("현재 필터 결과 CSV 다운로드",csv_bytes,file_name="michelin_filtered_2026.csv",mime="text/csv")
+df["추천이유"] = df["식당명"].map(
+    recommendation_reasons
+).fillna("등급과 음식 종류를 참고해 직접 확인해 보세요.")
 
-with st.expander("분석 해석 시 주의"):
-    st.markdown("""
-- 이 데이터는 2026 공식 목록 전체가 아니라 일부 식당을 수집한 100행 파일입니다.
-- 공식 링크가 전부 비어 있으며 주소도 포함하지 않습니다.
-- 46행의 음식 종류와 가격 정보가 비어 있습니다.
-- 가격 기반 학생 추천은 빕 구르망 가격 기준이 기록된 후보에 한해 작성했습니다.
-- 추천 순위는 객관적 평점이 아니라 메뉴 친숙도와 식사 접근성을 기준으로 한 간단한 휴리스틱입니다.
-- 개별 식당 좌표가 없으므로 지도는 서울·부산 도시 중심 표시입니다.
+def recommendation_label(row):
+    if row["미쉐린 등급"] != "빕 구르망":
+        return "가격 정보 확인 필요"
 
+    if row["추천순위"] <= 18:
+        return "추천 메뉴"
+
+    return "추가 탐색 추천"
+
+df["학생 추천 구분"] = df.apply(
+    recommendation_label, axis=1
+)
+
+# ==========================================
+# 4. 상단 통계
+# ==========================================
+
+total = len(df)
+seoul = len(df[df["지역"] == "서울"])
+busan = len(df[df["지역"] == "부산"])
+bib = len(df[df["미쉐린 등급"] == "빕 구르망"])
+
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric("전체 식당", f"{total}곳")
+c2.metric("서울", f"{seoul}곳")
+c3.metric("부산", f"{busan}곳")
+c4.metric("빕 구르망", f"{bib}곳")
+
+st.divider()
+
+# ==========================================
+# 5. 사이드바
+# ==========================================
+
+st.sidebar.title("🔎 식당 검색")
+
+menu = st.sidebar.radio(
+    "메뉴 선택",
+    [
+        "전체 식당 목록",
+        "고등학생 추천 순위",
+        "식당 위치 지도",
+        "데이터 분석"
+    ]
+)
+
+region_filter = st.sidebar.selectbox(
+    "지역 선택",
+    ["전체", "서울", "부산"]
+)
+
+grade_filter = st.sidebar.selectbox(
+    "미쉐린 등급",
+    ["전체"] + sorted(df["미쉐린 등급"].unique())
+)
+
+# ==========================================
+# 6. 전체 식당 목록
+# ==========================================
+
+if menu == "전체 식당 목록":
+
+    st.header("📋 전체 미쉐린 식당")
+
+    search = st.text_input(
+        "식당 이름 또는 음식 종류 검색",
+        placeholder="예: 밍글스, 냉면, 한식"
+    )
+
+    filtered = df.copy()
+
+    if region_filter != "전체":
+        filtered = filtered[
+            filtered["지역"] == region_filter
+        ]
+
+    if grade_filter != "전체":
+        filtered = filtered[
+            filtered["미쉐린 등급"] == grade_filter
+        ]
+
+    if search:
+        filtered = filtered[
+            filtered["식당명"].str.contains(
+                search, case=False, na=False
+            )
+            |
+            filtered["음식 종류"].str.contains(
+                search, case=False, na=False
+            )
+        ]
+
+    st.write(f"검색 결과: {len(filtered)}곳")
+
+    st.dataframe(
+        filtered[
+            [
+                "식당명",
+                "지역",
+                "미쉐린 등급",
+                "음식 종류",
+                "가격 기준"
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("등급별 식당 목록")
+
+    for grade in [
+        "미쉐린 3스타",
+        "미쉐린 2스타",
+        "미쉐린 1스타",
+        "빕 구르망"
+    ]:
+
+        group = filtered[
+            filtered["미쉐린 등급"] == grade
+        ]
+
+        with st.expander(f"{grade} ({len(group)}곳)"):
+
+            for _, row in group.iterrows():
+
+                st.markdown(
+                    f"**{row['식당명']}** · "
+                    f"{row['지역']} · "
+                    f"{row['음식 종류'] or '음식 종류 미입력'}"
+                )
+
+# ==========================================
+# 7. 고등학생 추천 순위
+# ==========================================
+
+elif menu == "고등학생 추천 순위":
+
+    st.header("🏆 고등학생 추천 미쉐린 식당")
+
+    st.info(
+        "빕 구르망을 우선으로 하고 메뉴의 친숙함과 "
+        "식사 접근성을 고려한 참고용 추천 순위입니다. "
+        "실제 가격과 학생 할인 여부를 의미하지는 않습니다."
+    )
+
+    city = st.selectbox(
+        "추천 지역",
+        ["전체", "서울", "부산"]
+    )
+
+    rec = df[
+        df["미쉐린 등급"] == "빕 구르망"
+    ].copy()
+
+    if city != "전체":
+        rec = rec[rec["지역"] == city]
+
+    rec = rec.sort_values(
+        ["추천순위", "식당명"]
+    )
+
+    rec["추천순위 표시"] = range(1, len(rec) + 1)
+
+    for _, row in rec.iterrows():
+
+        with st.container(border=True):
+
+            a, b = st.columns([1, 5])
+
+            with a:
+                if row["추천순위"] != 999:
+                    st.metric(
+                        "추천",
+                        f"{row['추천순위']}위"
+                    )
+                else:
+                    st.write("추가 추천")
+
+            with b:
+                st.subheader(row["식당명"])
+
+                st.write(
+                    f"📍 {row['지역']} | "
+                    f"🍜 {row['음식 종류'] or '정보 없음'}"
+                )
+
+                st.write(row["추천이유"])
+
+                st.caption(
+                    f"등급: {row['미쉐린 등급']} | "
+                    f"가격 기준: {row['가격 기준'] or '정보 없음'}"
+                )
+
+# ==========================================
+# 8. 식당 위치 지도
+# ==========================================
+
+elif menu == "식당 위치 지도":
+
+    st.header("🗺️ 미쉐린 식당 위치 지도")
+
+    st.write(
+        "지역과 등급을 선택하고 지도에 표시할 식당을 골라보세요."
+    )
+
+    city = st.selectbox(
+        "지도 지역",
+        ["서울", "부산"]
+    )
+
+    map_data = df[df["지역"] == city].copy()
+
+    grade = st.selectbox(
+        "지도에 표시할 등급",
+        ["전체", "빕 구르망", "미쉐린 1스타",
+         "미쉐린 2스타", "미쉐린 3스타"]
+    )
+
+    if grade != "전체":
+        map_data = map_data[
+            map_data["미쉐린 등급"] == grade
+        ]
+
+    restaurant_names = map_data["식당명"].tolist()
+
+    selected = st.multiselect(
+        "지도에 표시할 식당 선택 (최대 10곳)",
+        restaurant_names,
+        default=restaurant_names[:5]
+    )
+
+    if len(selected) > 10:
+        st.warning("한 번에 최대 10곳까지 표시할 수 있어요.")
+
+    elif st.button("📍 지도에 식당 표시"):
+
+        if not selected:
+            st.warning("식당을 선택해주세요.")
+
+        else:
+
+            geolocator = Nominatim(
+                user_agent="michelin_student_guide_2026"
+            )
+
+            center = (
+                [37.5665, 126.9780]
+                if city == "서울"
+                else [35.1796, 129.0756]
+            )
+
+            restaurant_map = folium.Map(
+                location=center,
+                zoom_start=11,
+                tiles="OpenStreetMap"
+            )
+
+            found = 0
+
+            progress = st.progress(0)
+            status = st.empty()
+
+            for i, name in enumerate(selected):
+
+                query = f"{name}, {city}, South Korea"
+
+                try:
+                    location = geolocator.geocode(
+                        query,
+                        timeout=10,
+                        country_codes="kr"
+                    )
+
+                    if location:
+
+                        row = map_data[
+                            map_data["식당명"] == name
+                        ].iloc[0]
+
+                        popup_text = (
+                            f"<b>{name}</b><br>"
+                            f"{row['미쉐린 등급']}<br>"
+                            f"{row['음식 종류']}"
+                        )
+
+                        folium.Marker(
+                            location=[
+                                location.latitude,
+                                location.longitude
+                            ],
+                            popup=popup_text,
+                            tooltip=name,
+                            icon=folium.Icon(
+                                color="red",
+                                icon="cutlery",
+                                prefix="fa"
+                            )
+                        ).add_to(restaurant_map)
+
+                        found += 1
+
+                    else:
+                        st.warning(
+                            f"{name}: 위치를 찾지 못했습니다."
+                        )
+
+                except Exception as e:
+                    st.warning(
+                        f"{name}: 위치 검색에 실패했습니다."
+                    )
+
+                progress.progress((i + 1) / len(selected))
+                status.write(
+                    f"{i + 1}/{len(selected)}곳 위치 검색 중"
+                )
+
+                time.sleep(1.1)
+
+            if found > 0:
+
+                st.success(
+                    f"총 {found}곳의 위치를 찾았습니다."
+                )
+
+                st_folium(
+                    restaurant_map,
+                    width=None,
+                    height=600,
+                    returned_objects=[]
+                )
+
+            else:
+                st.error(
+                    "식당 위치를 찾지 못했습니다. "
+                    "인터넷 연결과 식당명을 확인해주세요."
+                )
+
+# ==========================================
+# 9. 데이터 분석
+# ==========================================
+
+elif menu == "데이터 분석":
+
+    st.header("📊 미쉐린 데이터 분석")
+
+    chart_df = df.copy()
+
+    if region_filter != "전체":
+        chart_df = chart_df[
+            chart_df["지역"] == region_filter
+        ]
+
+    if grade_filter != "전체":
+        chart_df = chart_df[
+            chart_df["미쉐린 등급"] == grade_filter
+        ]
+
+    st.subheader("① 미쉐린 등급별 식당 수")
+
+    grade_count = chart_df[
+        "미쉐린 등급"
+    ].value_counts().reset_index()
+
+    grade_count.columns = ["등급", "식당 수"]
+
+    fig1 = px.bar(
+        grade_count,
+        x="등급",
+        y="식당 수",
+        text="식당 수",
+        color="등급",
+        title="등급별 식당 수"
+    )
+
+    st.plotly_chart(fig1, use_container_width=True)
+
+    st.subheader("② 지역별 식당 수")
+
+    region_count = chart_df[
+        "지역"
+    ].value_counts().reset_index()
+
+    region_count.columns = ["지역", "식당 수"]
+
+    fig2 = px.pie(
+        region_count,
+        names="지역",
+        values="식당 수",
+        hole=0.35,
+        title="지역별 식당 비율"
+    )
+
+    st.plotly_chart(fig2, use_container_width=True)
+
+    st.subheader("③ 음식 종류별 식당 수")
+
+    food_df = chart_df[
+        chart_df["음식 종류"] != ""
+    ]
+
+    food_count = (
+        food_df["음식 종류"]
+        .value_counts()
+        .head(15)
+        .reset_index()
+    )
+
+    food_count.columns = ["음식 종류", "식당 수"]
+
+    fig3 = px.bar(
+        food_count,
+        x="음식 종류",
+        y="식당 수",
+        text="식당 수",
+        title="음식 종류 TOP 15"
+    )
+
+    st.plotly_chart(fig3, use_container_width=True)
+
+    st.subheader("④ 지역별 등급 교차 분석")
+
+    cross = pd.crosstab(
+        chart_df["지역"],
+        chart_df["미쉐린 등급"]
+    )
+
+    st.dataframe(
+        cross,
+        use_container_width=True
+    )
+
+    st.subheader("⑤ 데이터 결측치 분석")
+
+    missing = df.isnull().sum().reset_index()
+
+    missing.columns = ["컬럼", "결측치"]
+
+    st.dataframe(
+        missing,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("⑥ 데이터 요약")
+
+    st.write("전체 데이터 크기:", df.shape)
+
+    st.write("중복 행 개수:", df.duplicated().sum())
+
+    st.write("음식 종류 입력 개수:",
+             (df["음식 종류"] != "").sum())
+
+    st.write("가격 기준 입력 개수:",
+             (df["가격 기준"] != "").sum())
+
+# ==========================================
+# 10. 하단 안내
+# ==========================================
+
+st.divider()
+
+st.caption(
+    "자료 출처: 사용자가 제공한 michelin_2026_korea.csv"
+)
+
+st.caption(
+    "추천 순위는 학생의 메뉴 접근성을 고려한 자체 기준이며 "
+    "공식 미쉐린 순위가 아닙니다."
+)
